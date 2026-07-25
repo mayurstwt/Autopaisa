@@ -1,0 +1,35 @@
+name: Autopaisa Automated Trading Cron
+
+on:
+  schedule:
+    # Runs every 5 minutes between 03:00 UTC and 10:30 UTC on Mon-Fri (08:30 IST to 16:00 IST)
+    - cron: '*/5 3-10 * * 1-5'
+  workflow_dispatch: # Allows manual trigger from GitHub UI anytime
+
+jobs:
+  run-trading-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Root Dependencies
+        run: npm ci
+
+      - name: Install Worker Dependencies
+        run: cd worker && npm ci
+
+      - name: Run Trading Cycle Tick
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          npx tsx worker/src/tick.ts

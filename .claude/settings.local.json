@@ -2,7 +2,21 @@
   "permissions": {
     "allow": [
       "Bash(npm --version)",
-      "Bash(npx create-next-app@latest *)"
+      "Bash(npx create-next-app@latest *)",
+      "Bash(npm install *)",
+      "Bash(supabase login *)",
+      "Bash(supabase init *)",
+      "Bash(npx ts-node *)",
+      "Bash(npm test *)",
+      "Bash(npx jest *)",
+      "Bash(npm init *)",
+      "Bash(npx tsc *)",
+      "Bash(npx shadcn-ui@latest *)",
+      "Bash(npx shadcn@latest *)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(npm run *)",
+      "Bash(npm list *)",
+      "Bash(pkill -f \"node\")"
     ]
   }
 }
