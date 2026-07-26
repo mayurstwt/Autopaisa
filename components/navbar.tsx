@@ -82,7 +82,7 @@ export function Navbar() {
               </div>
               <div className="flex flex-col">
                 <span className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
-                  Paisa<span className="text-indigo-400">Bot</span>
+                  Auto<span className="text-indigo-400">Paisa</span>
                 </span>
                 <span className="text-[10px] tracking-wider text-slate-400 uppercase font-medium -mt-1">
                   Paper Trader
