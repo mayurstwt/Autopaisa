@@ -377,6 +377,7 @@ export async function processTradingCycle(): Promise<void> {
           sma50: signalResult.sma50,
           rsi14: signalResult.rsi14,
           acted_on: false,
+          reason: signalResult.reason,
         })
 
       if (signalLogError) {
