@@ -367,6 +367,23 @@ export async function processTradingCycle(): Promise<void> {
       const signalResult = await generateSignal(symbol)
       console.log(`Signal for ${symbol}: ${signalResult.signal} - ${signalResult.reason}`)
 
+      // Record signal to signals_log table so frontend Activity Log displays recent scan evaluation
+      const { error: signalLogError } = await supabaseAdmin
+        .from('signals_log')
+        .insert({
+          symbol: signalResult.symbol,
+          signal: signalResult.signal,
+          sma20: signalResult.sma20,
+          sma50: signalResult.sma50,
+          rsi14: signalResult.rsi14,
+          acted_on: false,
+          reason: signalResult.reason,
+        })
+
+      if (signalLogError) {
+        console.error(`Error logging signal to Supabase for ${symbol}:`, signalLogError)
+      }
+
       // Execute trade if signal is buy or sell
       if (signalResult.signal !== 'hold') {
         await executeTrade(signalResult)

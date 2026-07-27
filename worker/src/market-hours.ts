@@ -21,21 +21,41 @@ const NSE_2026_HOLIDAYS = [
 ];
 
 /**
+ * Helper to extract IST time components using Intl.DateTimeFormat
+ */
+export function getISTParts(): { dateString: string; dayOfWeek: number; hours: number; minutes: number } {
+  const now = new Date();
+  
+  // YYYY-MM-DD in IST
+  const dateString = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
+
+  // Hours (0-23) and Minutes in IST
+  const hoursStr = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', hour: 'numeric', hourCycle: 'h23' }).format(now);
+  const minutesStr = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', minute: 'numeric' }).format(now);
+
+  const hours = parseInt(hoursStr, 10);
+  const minutes = parseInt(minutesStr, 10);
+
+  // Day of week in IST (0 = Sun, 6 = Sat)
+  const dayName = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', weekday: 'short' }).format(now);
+  const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const dayOfWeek = dayMap[dayName] ?? 0;
+
+  return { dateString, dayOfWeek, hours, minutes };
+}
+
+/**
  * Check if today is a market day (Monday-Friday and not a holiday)
  */
 export function isMarketDay(): boolean {
-  const now = new Date();
-  // Convert to IST (UTC+5:30)
-  const istTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const { dateString, dayOfWeek } = getISTParts();
   
   // Check if it's weekend (0 = Sunday, 6 = Saturday)
-  const dayOfWeek = istTime.getDay();
   if (dayOfWeek === 0 || dayOfWeek === 6) {
     return false; // Weekend
   }
   
   // Check if it's a holiday
-  const dateString = istTime.toISOString().split('T')[0]; // YYYY-MM-DD
   if (NSE_2026_HOLIDAYS.includes(dateString)) {
     return false; // Holiday
   }
@@ -47,16 +67,11 @@ export function isMarketDay(): boolean {
  * Check if current time is within market hours (9:15 AM - 3:30 PM IST)
  */
 export function isMarketHours(): boolean {
-  const now = new Date();
-  // Convert to IST (UTC+5:30)
-  const istTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  
-  const hours = istTime.getHours();
-  const minutes = istTime.getMinutes();
+  const { hours, minutes } = getISTParts();
   const totalMinutes = hours * 60 + minutes;
   
-  // Market opens at 9:15 AM (9*60 + 15 = 555 minutes)
-  // Market closes at 3:30 PM (15*60 + 30 = 930 minutes)
+  // Market opens at 9:15 AM (555 minutes)
+  // Market closes at 3:30 PM (930 minutes)
   const marketOpen = 9 * 60 + 15; // 555
   const marketClose = 15 * 60 + 30; // 930
   

@@ -5,6 +5,8 @@ on:
     # Runs every 5 minutes between 03:00 UTC and 10:30 UTC on Mon-Fri (08:30 IST to 16:00 IST)
     - cron: '*/5 3-10 * * 1-5'
   workflow_dispatch: # Allows manual trigger from GitHub UI anytime
+  repository_dispatch: # Allows external cron services (cron-job.org) to trigger instant execution
+    types: [trigger-trading-tick]
 
 jobs:
   run-trading-bot:
