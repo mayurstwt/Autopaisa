@@ -3,8 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 
 // Load environment variables from .env file in non-production environments
 if (process.env.NODE_ENV !== 'production') {
-  const dotenv = await import('dotenv')
-  dotenv.config()
+  try {
+    require('dotenv').config()
+  } catch (e) {
+    // Environment variables already loaded by Next.js
+  }
 }
 
 // Support both NEXT_PUBLIC_ (for Next.js) and non-prefixed (for worker) env vars
