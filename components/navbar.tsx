@@ -11,7 +11,8 @@ import {
   Activity,
   Wallet,
   Bot,
-  CircleDot
+  CircleDot,
+  Zap
 } from 'lucide-react';
 
 const navItems = [
@@ -20,6 +21,7 @@ const navItems = [
   { href: '/trades', label: 'Trades', icon: History },
   { href: '/transactions', label: 'Transactions', icon: ArrowRightLeft },
   { href: '/activity', label: 'Activity', icon: Activity },
+  { href: '/scalper', label: 'Scalper Bot ⚡', icon: Zap },
   { href: '/wallet', label: 'Wallet', icon: Wallet },
 ];
 

@@ -36,6 +36,19 @@ Autopaisa is an educational simulation that:
 - **Risk Management**: Stop-loss (-5%) and take-profit (+10%) triggers
 - **Delivery Trades Only**: No intraday, leverage, or derivatives
 
+### Intraday Scalping Bot Workspace ⚡
+- **Isolated Workspace & Wallet**: Completely separate ₹100,000 scalper paper wallet at `/scalper`.
+- **Intraday Scalp Engine**: Evaluates 1-minute intraday candles via VWAP & Relative Volume Filters.
+- **Ruleset Implementation**:
+  - **Rule 1 (VWAP Magnet)**: Long entry if price < VWAP; Short entry if price > VWAP.
+  - **Rule 2 (Relative Volume Filter)**: Current 1-minute volume $\ge 1.5\times$ 20-minute average volume.
+  - **Rule 3 (Time Gate)**: Active between 9:30 AM and 3:15 PM IST (Auto square-off at 3:15 PM IST).
+  - **Rule 5 (Asymmetric TP/SL)**: +0.20% Take Profit / -0.50% Stop Loss.
+  - **Rule 6 (Break-Even Trailing)**: Moves Stop Loss to Entry Price ($0 Risk) when profit hits +0.12% (60% of TP).
+  - **Rule 7 (Dynamic Cooldown)**: 30s pause after win/scratch; 120s pause after loss.
+  - **Rule 8 (Circuit Breaker)**: Automatically shuts down bot for the day if daily drawdown hits -2.0% (-₹2,000).
+  - **Rule 9 (Conviction Scaling)**: Doubles lot size (20% of wallet) on strong volume spikes ($\ge 2.0\times$).
+
 ### Realistic Financial Modeling
 - **Exact Fee Calculation**: Matches Zerodha/Groww pricing structure
 - **Brokerage**: ₹0 for delivery, min(₹20, 0.03%) for intraday
