@@ -3,9 +3,9 @@ import { fetchIntradayScalpData } from './market-intraday';
 import { calculateFees } from '../fees';
 
 export const SCALPER_CONSTANTS = {
-  TP_PERCENT: 0.0020, // 0.20% Take Profit
-  SL_PERCENT: 0.0050, // 0.50% Stop Loss
-  BREAK_EVEN_AT: 0.60, // 60% of TP (0.12%) triggers moving SL to Entry Price
+  TP_PERCENT: 0.0030, // 0.30% Take Profit
+  SL_PERCENT: 0.0075, // 0.75% Stop Loss
+  BREAK_EVEN_AT: 0.60, // 60% of TP (0.18%) triggers moving SL to Entry Price
   VOLUME_MULTIPLIER: 1.5, // Min 1.5x volume spike ratio
   COOLDOWN_WIN: 30, // 30 seconds after winning trade
   COOLDOWN_LOSS: 120, // 120 seconds after losing trade
@@ -95,12 +95,14 @@ export async function processScalperCycle(): Promise<{ status: string; message: 
       const scalpData = await fetchIntradayScalpData(pos.symbol);
       const currentPrice = scalpData.currentPrice;
 
-      const profitPercent = (currentPrice - pos.entry_price) / pos.entry_price;
+      const profitPercent = pos.side === 'buy'
+        ? (currentPrice - pos.entry_price) / pos.entry_price
+        : (pos.entry_price - currentPrice) / pos.entry_price;
 
-      // Rule 6: Break-even trailing (60% of TP = +0.12%)
+      // Rule 6: Break-even trailing (60% of TP = +0.18%)
       const breakEvenTriggerPct = SCALPER_CONSTANTS.TP_PERCENT * SCALPER_CONSTANTS.BREAK_EVEN_AT;
       if (!pos.break_even_triggered && profitPercent >= breakEvenTriggerPct) {
-        console.log(`[Scratch Protector] ${pos.symbol} profit +${(profitPercent * 100).toFixed(2)}% >= 0.12%. Moving SL to Entry Price ₹${pos.entry_price}`);
+        console.log(`[Scratch Protector] ${pos.symbol} (${pos.side.toUpperCase()}) profit +${(profitPercent * 100).toFixed(2)}% >= ${(breakEvenTriggerPct * 100).toFixed(2)}%. Moving SL to Entry Price ₹${pos.entry_price}`);
         await supabaseAdmin
           .from('scalper_positions')
           .update({
@@ -113,17 +115,19 @@ export async function processScalperCycle(): Promise<{ status: string; message: 
         pos.break_even_triggered = true;
       }
 
-      // Rule 5: Check Take Profit Exit
-      if (currentPrice >= pos.tp_price) {
-        console.log(`[TP Hit] ${pos.symbol} @ ₹${currentPrice} >= TP ₹${pos.tp_price}`);
+      // Rule 5: Check Take Profit & Stop Loss Exits (branched on position side)
+      const hitTP = pos.side === 'buy' ? currentPrice >= pos.tp_price : currentPrice <= pos.tp_price;
+      const hitSL = pos.side === 'buy' ? currentPrice <= pos.sl_price : currentPrice >= pos.sl_price;
+
+      if (hitTP) {
+        console.log(`[TP Hit] ${pos.symbol} (${pos.side.toUpperCase()}) @ ₹${currentPrice} (TP ₹${pos.tp_price})`);
         await exitScalpPosition(pos, currentPrice, 'tp', scalperWallet, scalperState);
         continue;
       }
 
-      // Rule 5 & 6: Check Stop Loss Exit
-      if (currentPrice <= pos.sl_price) {
+      if (hitSL) {
         const reason = pos.break_even_triggered ? 'break_even' : 'sl';
-        console.log(`[SL Hit] ${pos.symbol} @ ₹${currentPrice} <= SL ₹${pos.sl_price} (${reason})`);
+        console.log(`[SL Hit] ${pos.symbol} (${pos.side.toUpperCase()}) @ ₹${currentPrice} (SL ₹${pos.sl_price}) (${reason})`);
         await exitScalpPosition(pos, currentPrice, reason, scalperWallet, scalperState);
         continue;
       }
@@ -149,8 +153,8 @@ export async function processScalperCycle(): Promise<{ status: string; message: 
     };
   }
 
-  // 2. Scan Watchlist for New Entry Setup
-  const { data: watchlistData } = await supabaseAdmin.from('watchlist').select('symbol').eq('active', true);
+  // 2. Scan Watchlist for New Entry Setup (from isolated scalper_watchlist table)
+  const { data: watchlistData } = await supabaseAdmin.from('scalper_watchlist').select('symbol').eq('active', true);
   const symbols = (watchlistData || []).map(r => r.symbol);
 
   for (const symbol of symbols) {
@@ -196,14 +200,27 @@ export async function processScalperCycle(): Promise<{ status: string; message: 
 
       // Execute Entry if Signal is BUY or SELL
       if (signal !== 'hold') {
-        // Rule 9: Conviction Scaling (2x lot size if volume ratio >= 2.0x)
+        // Conviction Scaling (97% ratio if volume ratio >= 2.0x, else 90%)
         const isHighConviction = volumeRatio >= 2.0;
-        const investRatio = isHighConviction ? 0.20 : 0.10; // 20% vs 10%
+        const investRatio = isHighConviction ? 0.97 : 0.90;
         const investAmount = scalperWallet.balance * investRatio;
-        const quantity = Math.floor(investAmount / currentPrice);
+
+        let quantity = Math.floor(investAmount / currentPrice);
+
+        // Cash-safety clamp: ensure trade value + entry fees do not exceed wallet balance
+        while (quantity > 0) {
+          const entryVal = quantity * currentPrice;
+          const entryFees = calculateFees('intraday', signal, entryVal);
+          if (entryVal + entryFees.totalCharges <= scalperWallet.balance) {
+            break;
+          }
+          quantity--;
+        }
 
         if (quantity > 0) {
           const entryPrice = currentPrice;
+          const entryValue = quantity * entryPrice;
+          const entryFees = calculateFees('intraday', signal, entryValue);
           let tpPrice: number;
           let slPrice: number;
 
@@ -222,17 +239,17 @@ export async function processScalperCycle(): Promise<{ status: string; message: 
             side: signal,
             entry_price: entryPrice,
             quantity,
-            invest_amount: investAmount,
+            invest_amount: entryValue,
             tp_price: tpPrice,
             sl_price: slPrice,
             break_even_triggered: false,
           });
 
-          // Deduct from scalper wallet balance
-          const newWalletBalance = scalperWallet.balance - quantity * entryPrice;
-          await supabaseAdmin.from('scalper_wallet').update({ balance: newWalletBalance }).eq('id', scalperWallet.id);
+          // Deduct from scalper wallet balance (trade value + entry leg fees)
+          const newWalletBalance = scalperWallet.balance - (entryValue + entryFees.totalCharges);
+          await supabaseAdmin.from('scalper_wallet').update({ balance: parseFloat(newWalletBalance.toFixed(2)) }).eq('id', scalperWallet.id);
 
-          console.log(`[SCALPER ${signal.toUpperCase()}] ${symbol}: ${quantity} shares @ ₹${entryPrice} (TP: ₹${tpPrice}, SL: ₹${slPrice})`);
+          console.log(`[SCALPER ${signal.toUpperCase()}] ${symbol}: ${quantity} shares @ ₹${entryPrice} (TP: ₹${tpPrice}, SL: ₹${slPrice}, Entry Fees: ₹${entryFees.totalCharges})`);
           return {
             status: 'trade_opened',
             message: `Opened ${signal.toUpperCase()} scalp position for ${quantity} ${symbol} @ ₹${entryPrice}`,
@@ -251,7 +268,7 @@ export async function processScalperCycle(): Promise<{ status: string; message: 
 }
 
 /**
- * Exit an active scalp position, calculate P&L, charges, update wallet & state
+ * Exit an active scalp position, calculate P&L, charges for both legs, update wallet & state
  */
 export async function exitScalpPosition(
   pos: any,
@@ -261,12 +278,21 @@ export async function exitScalpPosition(
   state: any
 ): Promise<void> {
   const grossTradeValue = pos.quantity * exitPrice;
-  const rawPnl = (exitPrice - pos.entry_price) * pos.quantity;
-  const pnlPercent = (exitPrice - pos.entry_price) / pos.entry_price;
+  const rawPnl = pos.side === 'buy'
+    ? (exitPrice - pos.entry_price) * pos.quantity
+    : (pos.entry_price - exitPrice) * pos.quantity;
 
-  // Calculate fees (Intraday order type)
-  const fees = calculateFees('intraday', 'sell', grossTradeValue);
-  const netPnl = rawPnl - fees.totalCharges;
+  const pnlPercent = pos.side === 'buy'
+    ? (exitPrice - pos.entry_price) / pos.entry_price
+    : (pos.entry_price - exitPrice) / pos.entry_price;
+
+  // Calculate fees for entry leg and exit leg
+  const entryLegFees = calculateFees('intraday', pos.side, pos.quantity * pos.entry_price);
+  const exitSide = pos.side === 'buy' ? 'sell' : 'buy';
+  const exitLegFees = calculateFees('intraday', exitSide, grossTradeValue);
+
+  const totalBrokerageAndFees = parseFloat((entryLegFees.totalCharges + exitLegFees.totalCharges).toFixed(2));
+  const netPnl = rawPnl - totalBrokerageAndFees;
   const returnCapital = pos.quantity * pos.entry_price + netPnl;
 
   // 1. Delete from active positions
@@ -283,12 +309,12 @@ export async function exitScalpPosition(
     pnl: parseFloat(netPnl.toFixed(2)),
     pnl_percent: parseFloat(pnlPercent.toFixed(4)),
     exit_reason: exitReason,
-    brokerage: fees.totalCharges,
+    brokerage: totalBrokerageAndFees,
     net_amount: parseFloat(returnCapital.toFixed(2)),
   });
 
   // 3. Update scalper wallet balance
-  const updatedWalletBalance = wallet.balance + pos.quantity * pos.entry_price + netPnl;
+  const updatedWalletBalance = wallet.balance + returnCapital;
   await supabaseAdmin
     .from('scalper_wallet')
     .update({ balance: parseFloat(updatedWalletBalance.toFixed(2)), updated_at: new Date().toISOString() })
@@ -314,7 +340,7 @@ export async function exitScalpPosition(
     })
     .eq('id', state.id);
 
-  console.log(`[SCALPER EXIT] ${pos.symbol} @ ₹${exitPrice} (${exitReason.toUpperCase()}). Net P&L: ₹${netPnl.toFixed(2)} (${(pnlPercent * 100).toFixed(2)}%). Cooldown ${cooldownSecs}s.`);
+  console.log(`[SCALPER EXIT] ${pos.symbol} (${pos.side.toUpperCase()}) @ ₹${exitPrice} (${exitReason.toUpperCase()}). Net P&L: ₹${netPnl.toFixed(2)} (${(pnlPercent * 100).toFixed(2)}%). Round-trip fees: ₹${totalBrokerageAndFees}. Cooldown ${cooldownSecs}s.`);
 }
 
 /**
@@ -331,7 +357,3 @@ export async function initializeScalperStorage(): Promise<void> {
     await supabaseAdmin.from('scalper_state').insert({ daily_pnl: 0.0, starting_daily_balance: 100000.0, is_disabled_today: false });
   }
 }
-
-/**
- * Exit an active scalp position, calculate P&L, charges, update wallet & state
- */
