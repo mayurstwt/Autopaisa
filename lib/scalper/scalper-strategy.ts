@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../supabase';
 import { fetchIntradayScalpData } from './market-intraday';
 import { calculateFees } from '../fees';
+import { sendScalpEntryNotification, sendScalpExitNotification } from '../notifications';
 
 export const SCALPER_CONSTANTS = {
   TP_PERCENT: 0.0030, // 0.30% Take Profit
@@ -249,6 +250,19 @@ export async function processScalperCycle(): Promise<{ status: string; message: 
           const newWalletBalance = scalperWallet.balance - (entryValue + entryFees.totalCharges);
           await supabaseAdmin.from('scalper_wallet').update({ balance: parseFloat(newWalletBalance.toFixed(2)) }).eq('id', scalperWallet.id);
 
+          // Send Telegram Notification for Scalp Entry
+          await sendScalpEntryNotification({
+            symbol,
+            side: signal,
+            quantity,
+            entryPrice,
+            investAmount: entryValue,
+            tpPrice,
+            slPrice,
+            entryFees: entryFees.totalCharges,
+            walletBalance: newWalletBalance,
+          });
+
           console.log(`[SCALPER ${signal.toUpperCase()}] ${symbol}: ${quantity} shares @ ₹${entryPrice} (TP: ₹${tpPrice}, SL: ₹${slPrice}, Entry Fees: ₹${entryFees.totalCharges})`);
           return {
             status: 'trade_opened',
@@ -339,6 +353,20 @@ export async function exitScalpPosition(
       updated_at: new Date().toISOString(),
     })
     .eq('id', state.id);
+
+  // Send Telegram Notification for Scalp Exit
+  await sendScalpExitNotification({
+    symbol: pos.symbol,
+    side: pos.side,
+    entryPrice: pos.entry_price,
+    exitPrice,
+    quantity: pos.quantity,
+    exitReason,
+    netPnl,
+    pnlPercent,
+    roundTripFees: totalBrokerageAndFees,
+    walletBalance: updatedWalletBalance,
+  });
 
   console.log(`[SCALPER EXIT] ${pos.symbol} (${pos.side.toUpperCase()}) @ ₹${exitPrice} (${exitReason.toUpperCase()}). Net P&L: ₹${netPnl.toFixed(2)} (${(pnlPercent * 100).toFixed(2)}%). Round-trip fees: ₹${totalBrokerageAndFees}. Cooldown ${cooldownSecs}s.`);
 }

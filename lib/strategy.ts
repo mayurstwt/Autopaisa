@@ -3,6 +3,7 @@ import { supabaseAdmin } from './supabase';
 import { fetchMarketData } from './market';
 import { sma, rsi } from './ta';
 import { calculateFees } from './fees';
+import { sendSwingTradeNotification } from './notifications';
 
 export type Signal = 'buy' | 'sell' | 'hold'
 
@@ -272,6 +273,18 @@ export async function executeTrade(signalResult: SignalResult): Promise<void> {
     .limit(1) // Update the most recent matching signal
 
   if (signalUpdateError) throw signalUpdateError
+
+  // Send Telegram notification
+  await sendSwingTradeNotification({
+    symbol,
+    side: signal,
+    quantity,
+    price: currentPrice,
+    totalCharges: fees.totalCharges,
+    netAmount: fees.netAmount,
+    walletBalance: newBalance,
+    reason: signalResult.reason,
+  });
 
   console.log(`Executed ${signal} for ${quantity} ${symbol} @ ₹${currentPrice.toFixed(2)}`)
   console.log(`  Trade value: ₹${tradeValue.toFixed(2)}`)
