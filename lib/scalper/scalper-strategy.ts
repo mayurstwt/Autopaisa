@@ -15,6 +15,10 @@ export const SCALPER_CONSTANTS = {
   END_HOUR_MINUTES: 15 * 60 + 15, // 3:15 PM IST
 };
 
+export function getISTDateString(date: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(date);
+}
+
 export function getISTTimeInMinutes(): { totalMinutes: number; timeString: string } {
   const now = new Date();
   const hoursStr = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', hour: 'numeric', hourCycle: 'h23' }).format(now);
@@ -50,15 +54,49 @@ export async function processScalperCycle(): Promise<{ status: string; message: 
     throw new Error('Failed to load Scalper state or wallet from Supabase');
   }
 
-  const scalperState = stateRes.data;
+  let scalperState = stateRes.data;
   const scalperWallet = walletRes.data;
   const activePositions = activePositionsRes.data || [];
+
+  // Check if a new trading day (in IST) has started since last updated_at timestamp.
+  // If so, automatically reset daily_pnl and is_disabled_today flag.
+  const todayIST = getISTDateString();
+  const lastUpdateIST = scalperState.updated_at
+    ? getISTDateString(new Date(scalperState.updated_at))
+    : null;
+
+  if (!lastUpdateIST || lastUpdateIST !== todayIST) {
+    console.log(`[Auto-Reset] New trading day detected (${todayIST} vs last ${lastUpdateIST}). Resetting daily scalper state...`);
+    const { data: updatedState, error: resetErr } = await supabaseAdmin
+      .from('scalper_state')
+      .update({
+        daily_pnl: 0.0,
+        is_disabled_today: false,
+        cooldown_until: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', scalperState.id)
+      .select()
+      .single();
+
+    if (!resetErr && updatedState) {
+      scalperState = updatedState;
+    } else {
+      scalperState.daily_pnl = 0.0;
+      scalperState.is_disabled_today = false;
+      scalperState.cooldown_until = null;
+    }
+  }
 
   // Check Rule 8: Daily Circuit Breaker Shut Down (-2% drawdown)
   const maxDrawdown = scalperWallet.starting_balance * SCALPER_CONSTANTS.DAILY_LOSS_LIMIT; // -₹2,000
   if (scalperState.daily_pnl <= maxDrawdown || scalperState.is_disabled_today) {
     if (!scalperState.is_disabled_today) {
-      await supabaseAdmin.from('scalper_state').update({ is_disabled_today: true }).eq('id', scalperState.id);
+      await supabaseAdmin
+        .from('scalper_state')
+        .update({ is_disabled_today: true, updated_at: new Date().toISOString() })
+        .eq('id', scalperState.id);
+      scalperState.is_disabled_today = true;
     }
     return {
       status: 'circuit_breaker',

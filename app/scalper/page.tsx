@@ -24,6 +24,7 @@ export default function ScalperDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [runningTick, setRunningTick] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [resettingState, setResettingState] = useState(false);
   const [tickResult, setTickResult] = useState<any>(null);
 
   const fetchData = async () => {
@@ -78,6 +79,18 @@ export default function ScalperDashboardPage() {
     }
   };
 
+  const handleResetCircuitBreaker = async () => {
+    setResettingState(true);
+    try {
+      await fetch('/api/scalper/state', { method: 'POST' });
+      await fetchData();
+    } catch (err) {
+      console.error('Error resetting circuit breaker state:', err);
+    } finally {
+      setResettingState(false);
+    }
+  };
+
   if (loading && !wallet) {
     return (
       <div className="flex min-h-[70vh] flex-col items-center justify-center space-y-3">
@@ -119,6 +132,17 @@ export default function ScalperDashboardPage() {
             <Play className={`h-4 w-4 fill-slate-950 ${runningTick ? 'animate-spin' : ''}`} />
             <span>{runningTick ? 'Scanning 1m...' : 'Run 1m Scalp Tick'}</span>
           </button>
+
+          {state?.is_disabled_today && (
+            <button
+              onClick={handleResetCircuitBreaker}
+              disabled={resettingState}
+              className="inline-flex items-center space-x-2 rounded-xl border border-rose-500/30 bg-rose-500/15 px-3.5 py-2.5 text-xs font-bold text-rose-300 hover:bg-rose-500/25 transition-all disabled:opacity-50"
+            >
+              <RotateCcw className={`h-3.5 w-3.5 ${resettingState ? 'animate-spin' : ''}`} />
+              <span>Clear Circuit Breaker</span>
+            </button>
+          )}
 
           <button
             onClick={handleResetScalper}
@@ -193,7 +217,18 @@ export default function ScalperDashboardPage() {
 
         {/* Circuit Breaker Status */}
         <div className="glass-card rounded-2xl p-5 space-y-2 border border-slate-800/80">
-          <span className="text-xs font-medium text-slate-400">Circuit Breaker (-2% Drawdown)</span>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-slate-400">Circuit Breaker (-2% Drawdown)</span>
+            {state?.is_disabled_today && (
+              <button
+                onClick={handleResetCircuitBreaker}
+                disabled={resettingState}
+                className="text-[11px] font-bold text-rose-400 hover:underline disabled:opacity-50"
+              >
+                {resettingState ? 'Resetting...' : 'Clear Lock'}
+              </button>
+            )}
+          </div>
           <div className="flex items-center space-x-2">
             {state?.is_disabled_today ? (
               <span className="px-2.5 py-1 text-xs font-bold rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center gap-1">
