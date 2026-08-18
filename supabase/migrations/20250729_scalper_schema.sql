@@ -3,8 +3,8 @@
 -- Table: scalper_wallet
 create table if not exists scalper_wallet (
   id uuid primary key default gen_random_uuid(),
-  balance numeric(12,2) not null default 100000.00,
-  starting_balance numeric(12,2) not null default 100000.00,
+  balance numeric(12,2) not null default 10000000.00,
+  starting_balance numeric(12,2) not null default 10000000.00,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -60,7 +60,7 @@ create table if not exists scalper_signals_log (
 create table if not exists scalper_state (
   id uuid primary key default gen_random_uuid(),
   daily_pnl numeric(12,2) not null default 0.00,
-  starting_daily_balance numeric(12,2) not null default 100000.00,
+  starting_daily_balance numeric(12,2) not null default 10000000.00,
   is_disabled_today boolean not null default false,
   cooldown_until timestamptz,
   last_trade_result text, -- 'win', 'loss', 'scratch'
@@ -69,9 +69,9 @@ create table if not exists scalper_state (
 
 -- Insert initial records if not exists
 insert into scalper_wallet (balance, starting_balance)
-select 100000.00, 100000.00
+select 10000000.00, 10000000.00
 where not exists (select 1 from scalper_wallet);
 
 insert into scalper_state (daily_pnl, starting_daily_balance, is_disabled_today)
-select 0.00, 100000.00, false
+select 0.00, 10000000.00, false
 where not exists (select 1 from scalper_state);

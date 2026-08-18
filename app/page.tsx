@@ -73,18 +73,30 @@ export default function Home() {
         }))
         .filter((t: any) => t.date >= thirtyDaysAgo);
 
-      // Calculate Today's P&L
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      // Calculate Today's Realized P&L from executed sell trades and scalper bot
+      const [tradesRes, scalperStateRes] = await Promise.all([
+        fetch('/api/trades?limit=1000'),
+        fetch('/api/scalper/state'),
+      ]);
 
-      const todayTransactions = recentTransactions.filter((t: any) => {
-        const tDate = new Date(t.created_at);
-        tDate.setHours(0, 0, 0, 0);
-        return tDate.getTime() === today.getTime() && (t.type === 'trade_buy' || t.type === 'trade_sell');
-      });
+      let swingTodayPnL = 0;
+      if (tradesRes.ok) {
+        const tradesData = await tradesRes.json();
+        const todayStr = new Date().toISOString().split('T')[0];
+        const todaySellTrades = tradesData.filter((t: any) => {
+          const tDateStr = new Date(t.created_at).toISOString().split('T')[0];
+          return tDateStr === todayStr && t.side === 'sell' && t.realized_pnl !== null;
+        });
+        swingTodayPnL = todaySellTrades.reduce((sum: number, t: any) => sum + Number(t.realized_pnl || 0), 0);
+      }
 
-      const todayPnLValue = todayTransactions.reduce((sum: number, t: any) => sum + Number(t.amount), 0);
-      setTodayPnL(todayPnLValue);
+      let scalperTodayPnL = 0;
+      if (scalperStateRes.ok) {
+        const scalperState = await scalperStateRes.json();
+        scalperTodayPnL = Number(scalperState.daily_pnl || 0);
+      }
+
+      setTodayPnL(swingTodayPnL + scalperTodayPnL);
 
       // Build daily balance history chart
       const dailyBalances: Map<string, number> = new Map();

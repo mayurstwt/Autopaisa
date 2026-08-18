@@ -4,10 +4,11 @@ import { fetchMarketData } from '@/lib/market'
 
 export async function GET() {
   try {
-    // Get all holdings
+    // Get active holdings (quantity > 0)
     const { data: holdingsData, error: holdingsError } = await supabaseAdmin
       .from('holdings')
       .select('symbol, quantity, avg_buy_price')
+      .gt('quantity', 0)
 
     if (holdingsError) throw holdingsError
 

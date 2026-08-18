@@ -86,10 +86,10 @@ export default function TransactionsPage() {
         };
       case 'trade_sell':
         return {
-          label: 'Stock Sell Liquidation',
+          label: 'Stock Sell (Cash Credited)',
           icon: DollarSign,
-          color: 'text-purple-400',
-          bg: 'bg-purple-500/10 border-purple-500/20',
+          color: 'text-cyan-400',
+          bg: 'bg-cyan-500/10 border-cyan-500/20',
         };
       default:
         return {
@@ -207,7 +207,10 @@ export default function TransactionsPage() {
                 </div>
 
                 <div className="text-right">
-                  <p className={`font-mono font-extrabold text-sm sm:text-base ${isCredit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  <p className={`font-mono font-extrabold text-sm sm:text-base ${
+                    tx.type === 'deposit' ? 'text-emerald-400' :
+                    tx.type === 'trade_sell' ? 'text-cyan-400' : 'text-rose-400'
+                  }`}>
                     {formatAmount(tx.amount)}
                   </p>
                   <p className="text-[11px] font-mono text-slate-400 mt-0.5">

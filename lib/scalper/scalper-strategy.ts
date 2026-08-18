@@ -4,15 +4,18 @@ import { calculateFees } from '../fees';
 import { sendScalpEntryNotification, sendScalpExitNotification } from '../notifications';
 
 export const SCALPER_CONSTANTS = {
-  TP_PERCENT: 0.0030, // 0.30% Take Profit
-  SL_PERCENT: 0.0075, // 0.75% Stop Loss
-  BREAK_EVEN_AT: 0.60, // 60% of TP (0.18%) triggers moving SL to Entry Price
+  TP_PERCENT: 0.0060, // 0.60% Take Profit (2:1 Reward-to-Risk)
+  SL_PERCENT: 0.0030, // 0.30% Stop Loss
+  BREAK_EVEN_AT: 0.50, // 50% of TP (0.30% gain / 1.0R) triggers moving SL to Entry Price
   VOLUME_MULTIPLIER: 1.5, // Min 1.5x volume spike ratio
   COOLDOWN_WIN: 30, // 30 seconds after winning trade
   COOLDOWN_LOSS: 120, // 120 seconds after losing trade
-  DAILY_LOSS_LIMIT: -0.02, // -2.0% daily drawdown limit (-₹2,000 on ₹100,000)
+  DAILY_LOSS_LIMIT: -0.05, // -5.0% daily drawdown limit (-₹5,00,000 on ₹1 Crore - Aggressive)
+  RISK_PER_TRADE_PERCENT: 0.005, // 0.5% risk per scalp trade (₹50,000 on ₹1 Cr)
+  MAX_POSITION_ALLOCATION: 0.25, // Max 25% of wallet balance per single scalp trade (₹25 Lakhs)
   START_HOUR_MINUTES: 9 * 60 + 30, // 9:30 AM IST
   END_HOUR_MINUTES: 15 * 60 + 15, // 3:15 PM IST
+  DEFAULT_BALANCE: 10000000.0, // ₹1 Crore default balance (10,000,000 INR)
 };
 
 export function getISTDateString(date: Date = new Date()): string {
@@ -88,8 +91,9 @@ export async function processScalperCycle(): Promise<{ status: string; message: 
     }
   }
 
-  // Check Rule 8: Daily Circuit Breaker Shut Down (-2% drawdown)
-  const maxDrawdown = scalperWallet.starting_balance * SCALPER_CONSTANTS.DAILY_LOSS_LIMIT; // -₹2,000
+  // Check Rule 8: Daily Circuit Breaker Shut Down (-5% drawdown)
+  const startingCap = scalperWallet.starting_balance || SCALPER_CONSTANTS.DEFAULT_BALANCE;
+  const maxDrawdown = startingCap * SCALPER_CONSTANTS.DAILY_LOSS_LIMIT; // -₹5,00,000 on ₹1 Crore
   if (scalperState.daily_pnl <= maxDrawdown || scalperState.is_disabled_today) {
     if (!scalperState.is_disabled_today) {
       await supabaseAdmin
@@ -239,10 +243,17 @@ export async function processScalperCycle(): Promise<{ status: string; message: 
 
       // Execute Entry if Signal is BUY or SELL
       if (signal !== 'hold') {
-        // Conviction Scaling (97% ratio if volume ratio >= 2.0x, else 90%)
+        // Risk-Based Fixed Fractional Position Sizing for ₹1 Crore Capital Engine
+        // High conviction multiplier (1.25x risk allowance for strong volume spike >= 2.0x)
         const isHighConviction = volumeRatio >= 2.0;
-        const investRatio = isHighConviction ? 0.97 : 0.90;
-        const investAmount = scalperWallet.balance * investRatio;
+        const convictionRiskMultiplier = isHighConviction ? 1.25 : 1.0;
+
+        const riskAmountPerTrade = scalperWallet.balance * SCALPER_CONSTANTS.RISK_PER_TRADE_PERCENT * convictionRiskMultiplier;
+        const maxTradeCapitalLimit = scalperWallet.balance * SCALPER_CONSTANTS.MAX_POSITION_ALLOCATION;
+
+        // Position Capital = Risk Amount / SL Percentage, capped at 25% of total wallet balance
+        const rawTargetPositionValue = riskAmountPerTrade / SCALPER_CONSTANTS.SL_PERCENT;
+        const investAmount = Math.min(rawTargetPositionValue, maxTradeCapitalLimit);
 
         let quantity = Math.floor(investAmount / currentPrice);
 
@@ -415,11 +426,18 @@ export async function exitScalpPosition(
 export async function initializeScalperStorage(): Promise<void> {
   const { data: walletData } = await supabaseAdmin.from('scalper_wallet').select('id').limit(1);
   if (!walletData || walletData.length === 0) {
-    await supabaseAdmin.from('scalper_wallet').insert({ balance: 100000.0, starting_balance: 100000.0 });
+    await supabaseAdmin.from('scalper_wallet').insert({
+      balance: SCALPER_CONSTANTS.DEFAULT_BALANCE,
+      starting_balance: SCALPER_CONSTANTS.DEFAULT_BALANCE,
+    });
   }
 
   const { data: stateData } = await supabaseAdmin.from('scalper_state').select('id').limit(1);
   if (!stateData || stateData.length === 0) {
-    await supabaseAdmin.from('scalper_state').insert({ daily_pnl: 0.0, starting_daily_balance: 100000.0, is_disabled_today: false });
+    await supabaseAdmin.from('scalper_state').insert({
+      daily_pnl: 0.0,
+      starting_daily_balance: SCALPER_CONSTANTS.DEFAULT_BALANCE,
+      is_disabled_today: false,
+    });
   }
 }

@@ -5,16 +5,18 @@ Define these variables at the bot's initialization:
 
 | Parameter | Value | Description |
 | :--- | :--- | :--- |
-| `TP_PERCENT` | 0.0020 (0.20%) | Take Profit target from average entry price. |
-| `SL_PERCENT` | 0.0050 (0.50%) | Stop Loss threshold from average entry price. |
-| `BREAK_EVEN_AT` | 0.60 (60%) | Move SL to entry when price hits 60% of TP. |
+| `DEFAULT_BALANCE` | ₹10,000,000 (1 Cr) | Starting account balance for scalping. |
+| `TP_PERCENT` | 0.0060 (0.60%) | Take Profit target (2:1 Reward-to-Risk ratio). |
+| `SL_PERCENT` | 0.0030 (0.30%) | Stop Loss threshold from entry price. |
+| `BREAK_EVEN_AT` | 0.50 (50%) | Move SL to entry when price hits 50% of TP (0.30% gain / 1.0R). |
+| `RISK_PER_TRADE_PERCENT` | 0.0050 (0.50%) | Fixed fractional risk per scalp (₹50,000 on ₹1 Cr). |
+| `MAX_POSITION_ALLOCATION` | 0.25 (25%) | Max trade capital cap per position (₹25,00,000). |
 | `VOLUME_MULTIPLIER` | 1.5x | Min ratio of current 1m volume to 20m average. |
 | `COOLDOWN_WIN` | 30 seconds | Pause after a winning trade. |
 | `COOLDOWN_LOSS` | 120 seconds | Pause after a losing trade. |
-| `DAILY_LOSS_LIMIT` | -2.0% | Max daily drawdown (-2% of starting balance). |
-| `NEWS_BUFFER` | 5 minutes | Block trading before/after high-impact news. |
-| `TRADING_START` | 10:00 AM EST | Earliest time to enter a trade. |
-| `TRADING_END` | 3:30 PM EST | Latest time to enter a trade. |
+| `DAILY_LOSS_LIMIT` | -5.0% | Max daily drawdown (-5% of starting balance / -₹5,00,000 - Aggressive). |
+| `TRADING_START` | 09:30 AM IST | Earliest time to enter a trade. |
+| `TRADING_END` | 03:15 PM IST | Latest time to enter a trade (auto-squareoff at 3:15 PM). |
 
 ---
 

@@ -51,6 +51,8 @@ export default function TradesPage() {
   const buyTrades = trades.filter((t) => t.side === 'buy');
   const sellTrades = trades.filter((t) => t.side === 'sell');
   const totalChargesPaid = trades.reduce((sum, t) => sum + Number(t.total_charges || 0), 0);
+  const totalRealizedPnL = sellTrades.reduce((sum, t) => sum + Number(t.realized_pnl || 0), 0);
+  const isRealizedPositive = totalRealizedPnL >= 0;
 
   if (loading) {
     return (
@@ -92,9 +94,9 @@ export default function TradesPage() {
       )}
 
       {/* Metric Summary Cards */}
-      <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-4">
+      <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-5">
         <div className="glass-card rounded-2xl p-5">
-          <span className="text-xs font-medium text-slate-400">Total Executed Trades</span>
+          <span className="text-xs font-medium text-slate-400">Total Executed</span>
           <p className="text-2xl sm:text-3xl font-extrabold text-white mt-2">{trades.length}</p>
           <p className="text-[11px] text-slate-400 mt-1">Completed market orders</p>
         </div>
@@ -112,11 +114,19 @@ export default function TradesPage() {
         </div>
 
         <div className="glass-card rounded-2xl p-5">
-          <span className="text-xs font-medium text-slate-400">Total Charges & Taxes</span>
+          <span className="text-xs font-medium text-slate-400">Total Realized P&L</span>
+          <p className={`text-2xl sm:text-3xl font-extrabold mt-2 ${isRealizedPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
+            {isRealizedPositive ? `+₹${totalRealizedPnL.toFixed(2)}` : `-₹${Math.abs(totalRealizedPnL).toFixed(2)}`}
+          </p>
+          <p className="text-[11px] text-slate-400 mt-1">Closed trades profit/loss</p>
+        </div>
+
+        <div className="glass-card rounded-2xl p-5">
+          <span className="text-xs font-medium text-slate-400">Total Charges</span>
           <p className="text-2xl sm:text-3xl font-extrabold text-indigo-400 mt-2">
             ₹{totalChargesPaid.toFixed(2)}
           </p>
-          <p className="text-[11px] text-slate-400 mt-1">STT, Brokerage, Exchange & GST</p>
+          <p className="text-[11px] text-slate-400 mt-1">STT, Brokerage & Taxes</p>
         </div>
       </div>
 
@@ -137,6 +147,7 @@ export default function TradesPage() {
             {trades.map((trade: any) => {
               const isBuy = trade.side === 'buy';
               const netAmount = Number(trade.net_amount ?? trade.amount ?? 0);
+              const pnl = trade.realized_pnl !== null && trade.realized_pnl !== undefined ? Number(trade.realized_pnl) : null;
               const isExpanded = expandedTradeId === trade.id;
 
               return (
@@ -175,10 +186,16 @@ export default function TradesPage() {
                   </div>
 
                   <div className="pt-3 border-t border-slate-800/80 flex justify-between items-center text-xs">
-                    <span className="text-slate-400 font-medium">Net Amount</span>
-                    <span className={`font-extrabold text-sm ${netAmount >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {netAmount >= 0 ? `+₹${Math.abs(netAmount).toFixed(2)}` : `-₹${Math.abs(netAmount).toFixed(2)}`}
-                    </span>
+                    <span className="text-slate-400 font-medium">{isBuy ? 'Net Outflow' : 'Realized P&L'}</span>
+                    {isBuy ? (
+                      <span className="font-extrabold text-sm text-slate-300">
+                        -₹{Math.abs(netAmount).toFixed(2)}
+                      </span>
+                    ) : (
+                      <span className={`font-extrabold text-sm ${pnl !== null && pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {pnl !== null ? (pnl >= 0 ? `+₹${pnl.toFixed(2)}` : `-₹${Math.abs(pnl).toFixed(2)}`) : `+₹${netAmount.toFixed(2)}`}
+                      </span>
+                    )}
                   </div>
 
                   {trade.reason && (
@@ -224,7 +241,7 @@ export default function TradesPage() {
                   <th className="py-4 px-6 text-right">Price</th>
                   <th className="py-4 px-6 text-right">Trade Value</th>
                   <th className="py-4 px-6 text-right">Charges</th>
-                  <th className="py-4 px-6 text-right">Net Amount</th>
+                  <th className="py-4 px-6 text-right">Realized P&L / Net</th>
                   <th className="py-4 px-6">Strategy Signal</th>
                 </tr>
               </thead>
@@ -232,6 +249,7 @@ export default function TradesPage() {
                 {trades.map((trade: any) => {
                   const isBuy = trade.side === 'buy';
                   const netAmount = Number(trade.net_amount ?? trade.amount ?? 0);
+                  const pnl = trade.realized_pnl !== null && trade.realized_pnl !== undefined ? Number(trade.realized_pnl) : null;
 
                   return (
                     <tr key={trade.id} className="hover:bg-slate-800/40 transition-colors">
@@ -252,8 +270,21 @@ export default function TradesPage() {
                       <td className="py-4 px-6 text-right font-mono text-indigo-300">
                         ₹{trade.total_charges?.toFixed(2)}
                       </td>
-                      <td className={`py-4 px-6 text-right font-mono font-extrabold ${netAmount >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {netAmount >= 0 ? `+₹${Math.abs(netAmount).toFixed(2)}` : `-₹${Math.abs(netAmount).toFixed(2)}`}
+                      <td className="py-4 px-6 text-right font-mono font-extrabold">
+                        {isBuy ? (
+                          <span className="text-slate-300">-₹{Math.abs(netAmount).toFixed(2)}</span>
+                        ) : pnl !== null ? (
+                          <div>
+                            <span className={pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                              {pnl >= 0 ? `+₹${pnl.toFixed(2)}` : `-₹${Math.abs(pnl).toFixed(2)}`}
+                            </span>
+                            <span className="block text-[10px] text-slate-500 font-sans font-normal">
+                              Net Cash: +₹{netAmount.toFixed(2)}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-emerald-400">+₹{netAmount.toFixed(2)}</span>
+                        )}
                       </td>
                       <td className="py-4 px-6 text-xs text-slate-400 max-w-[220px] truncate" title={trade.reason || ''}>
                         {trade.reason || 'Technical indicator signal'}
