@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '../supabase';
 import { fetchIntradayScalpData } from './market-intraday';
 import { calculateFees } from '../fees';
-import { sendScalpEntryNotification, sendScalpExitNotification } from '../notifications';
+import { sendScalpEntryNotification, sendScalpExitNotification, sendCROAlertNotification } from '../notifications';
 
 export const SCALPER_CONSTANTS = {
   TP_PERCENT: 0.0060, // 0.60% Take Profit (2:1 Reward-to-Risk)
@@ -17,6 +17,109 @@ export const SCALPER_CONSTANTS = {
   END_HOUR_MINUTES: 15 * 60 + 15, // 3:15 PM IST
   DEFAULT_BALANCE: 10000000.0, // ₹1 Crore default balance (10,000,000 INR)
 };
+
+export const QUANT_STRATEGIES = [
+  {
+    id: 'trend_following',
+    name: 'Trend Following',
+    tag: 'TREND',
+    icon: '📈',
+    description: 'Rides confirmed directional trends using moving average alignment (Price > SMA20 > SMA50). Exits on trend reversal.',
+    desk: 'CTA / Trend Desk',
+  },
+  {
+    id: 'mean_reversion',
+    name: 'Mean Reversion',
+    tag: 'REVERSION',
+    icon: '⚖️',
+    description: 'Bets on price extremes snapping back toward VWAP and RSI oversold bounds. Buys oversold, sells overbought.',
+    desk: 'Stat-Arb / Reversion Desk',
+  },
+  {
+    id: 'momentum_trading',
+    name: 'Momentum Trading',
+    tag: 'MOMENTUM',
+    icon: '🚀',
+    description: 'Aggressive short-horizon momentum scanning. Buys rapid price surges with relative volume >= 1.5x.',
+    desk: 'HFT / Momentum Desk',
+  },
+  {
+    id: 'breakout_trading',
+    name: 'Breakout Trading',
+    tag: 'BREAKOUT',
+    icon: '💥',
+    description: 'Enters when price breaks 20-candle consolidation high/low boundaries with explosive volume expansion.',
+    desk: 'Breakout Desk',
+  },
+  {
+    id: 'stat_arbitrage',
+    name: 'Arbitrage / Stat-Arb',
+    tag: 'STAT-ARB',
+    icon: '⚡',
+    description: 'Exploits statistical price discrepancies and spread divergence z-scores across correlated stock pairs.',
+    desk: 'Quantitative Stat-Arb Suite',
+  },
+];
+
+export const DEFAULT_SCALPER_WATCHLIST = [
+  { symbol: 'AEGISCHEM.NS', name: 'Aegis Logistics Ltd' },
+  { symbol: 'AFFLE.NS', name: 'Affle (India) Ltd' },
+  { symbol: 'ARE&M.NS', name: 'Amara Raja Energy & Mobility Ltd' },
+  { symbol: 'AMBER.NS', name: 'Amber Enterprises India Ltd' },
+  { symbol: 'ANANDRATHI.NS', name: 'Anand Rathi Wealth Ltd' },
+  { symbol: 'ANGELONE.NS', name: 'Angel One Ltd' },
+  { symbol: 'ASTERDM.NS', name: 'Aster DM Healthcare Ltd' },
+  { symbol: 'BANDHANBNK.NS', name: 'Bandhan Bank Ltd' },
+  { symbol: 'CASTROLIND.NS', name: 'Castrol India Ltd' },
+  { symbol: 'CDSL.NS', name: 'Central Depository Services (India) Ltd' },
+  { symbol: 'CUB.NS', name: 'City Union Bank Ltd' },
+  { symbol: 'COHANCE.NS', name: 'Cohance Lifesciences Ltd' },
+  { symbol: 'CAMS.NS', name: 'Computer Age Management Services Ltd (CAMS)' },
+  { symbol: 'CROMPTON.NS', name: 'Crompton Greaves Consumer Electricals Ltd' },
+  { symbol: 'DELHIVERY.NS', name: 'Delhivery Ltd' },
+  { symbol: 'LALPATHLAB.NS', name: 'Dr. Lal PathLabs Ltd' },
+  { symbol: 'FIVESTAR.NS', name: 'Five-Star Business Finance Ltd' },
+  { symbol: 'GLAND.NS', name: 'Gland Pharma Ltd' },
+  { symbol: 'HSCL.NS', name: 'Himadri Speciality Chemical Ltd' },
+  { symbol: 'HINDCOPPER.NS', name: 'Hindustan Copper Ltd' },
+  { symbol: 'IIFL.NS', name: 'IIFL Finance Ltd' },
+  { symbol: 'IGL.NS', name: 'Indraprastha Gas Ltd' },
+  { symbol: 'INOXWIND.NS', name: 'Inox Wind Ltd' },
+  { symbol: 'KARURVYSYA.NS', name: 'Karur Vysya Bank Ltd' },
+  { symbol: 'KAYNES.NS', name: 'Kaynes Technology India Ltd' },
+  { symbol: 'KEC.NS', name: 'KEC International Ltd' },
+  { symbol: 'KFINTECH.NS', name: 'KFin Technologies Ltd' },
+  { symbol: 'MANAPPURAM.NS', name: 'Manappuram Finance Ltd' },
+  { symbol: 'NH.NS', name: 'Narayana Hrudayalaya Ltd' },
+  { symbol: 'NATCOPHARM.NS', name: 'Natco Pharma Ltd' },
+  { symbol: 'NAVINFLUOR.NS', name: 'Navin Fluorine International Ltd' },
+  { symbol: 'NBCC.NS', name: 'NBCC (India) Ltd' },
+  { symbol: 'NEULANDLAB.NS', name: 'Neuland Laboratories Ltd' },
+  { symbol: 'PGEL.NS', name: 'PG Electroplast Ltd' },
+  { symbol: 'PPLPHARMA.NS', name: 'Piramal Pharma Ltd' },
+  { symbol: 'PNBHOUSING.NS', name: 'PNB Housing Finance Ltd' },
+  { symbol: 'POONAWALLA.NS', name: 'Poonawalla Fincorp Ltd' },
+  { symbol: 'RBLBANK.NS', name: 'RBL Bank Ltd' },
+  { symbol: 'REDINGTON.NS', name: 'Redington Ltd' },
+  { symbol: 'SAILIFE.NS', name: 'Sai Life Sciences Ltd' },
+  { symbol: 'SONACOMS.NS', name: 'Sona BLW Precision Forgings Ltd' },
+  { symbol: 'SYNGENE.NS', name: 'Syngene International Ltd' },
+  { symbol: 'TATACHEM.NS', name: 'Tata Chemicals Ltd' },
+  { symbol: 'TATATECH.NS', name: 'Tata Technologies Ltd' },
+  { symbol: 'WELCORP.NS', name: 'Welspun Corp Ltd' },
+  { symbol: 'WOCKPHARMA.NS', name: 'Wockhardt Ltd' },
+  { symbol: 'ZENSARTECH.NS', name: 'Zensar Technologies Ltd' },
+  { symbol: 'ADANIENT.NS', name: 'Adani Enterprises' },
+  { symbol: 'ADANIPOWER.NS', name: 'Adani Power' },
+  { symbol: 'SUZLON.NS', name: 'Suzlon Energy' },
+  { symbol: 'IDEA.NS', name: 'Vodafone Idea' },
+  { symbol: 'YESBANK.NS', name: 'Yes Bank' },
+  { symbol: 'IDFCFIRSTB.NS', name: 'IDFC First Bank' },
+  { symbol: 'RVNL.NS', name: 'Rail Vikas Nigam' },
+  { symbol: 'IRFC.NS', name: 'Indian Railway Finance Corp' },
+  { symbol: 'TATAPOWER.NS', name: 'Tata Power' },
+  { symbol: 'ZOMATO.NS', name: 'Zomato' },
+];
 
 export function getISTDateString(date: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(date);
@@ -101,6 +204,15 @@ export async function processScalperCycle(): Promise<{ status: string; message: 
         .update({ is_disabled_today: true, updated_at: new Date().toISOString() })
         .eq('id', scalperState.id);
       scalperState.is_disabled_today = true;
+
+      // Send Telegram alert by CRO Dev
+      await sendCROAlertNotification({
+        alertType: 'circuit_breaker',
+        message: `Daily drawdown limit hit (₹${scalperState.daily_pnl.toFixed(2)} <= limit ₹${maxDrawdown.toFixed(2)}). Intraday scalper halted.`,
+        currentDrawdown: scalperState.daily_pnl,
+        dailyLossLimit: maxDrawdown,
+        employeeName: 'Dev',
+      });
     }
     return {
       status: 'circuit_breaker',
@@ -188,17 +300,17 @@ export async function processScalperCycle(): Promise<{ status: string; message: 
     };
   }
 
-  // If we already hold an active position, skip opening new entries (max 1 active scalp trade at a time)
-  if (activePositions.length > 0) {
-    return {
-      status: 'managing_position',
-      message: `Currently managing ${activePositions.length} active scalp position (${activePositions[0].symbol}).`,
-    };
-  }
+  // Note: Single position restriction removed per user directive. Scalper is authorized to execute multiple trades concurrently up to full ₹1 Crore wallet budget.
+  let tradesOpenedThisCycle = 0;
 
   // 2. Scan Watchlist for New Entry Setup (from isolated scalper_watchlist table)
   const { data: watchlistData } = await supabaseAdmin.from('scalper_watchlist').select('symbol').eq('active', true);
-  const symbols = (watchlistData || []).map(r => r.symbol);
+  let symbols = (watchlistData || []).map(r => r.symbol);
+
+  // Fallback to default smallcap watchlist if DB watchlist is empty
+  if (symbols.length === 0) {
+    symbols = DEFAULT_SCALPER_WATCHLIST.map(r => r.symbol);
+  }
 
   for (const symbol of symbols) {
     try {
@@ -216,15 +328,32 @@ export async function processScalperCycle(): Promise<{ status: string; message: 
 
       let signal: 'buy' | 'sell' | 'hold' = 'hold';
       let reason = '';
+      let strategyName = 'Mean Reversion';
 
-      if (volumeCondition && (isLongSetup || isShortSetup)) {
-        signal = isLongSetup ? 'buy' : 'sell';
-        const sideText = isLongSetup ? 'Long (Price < VWAP)' : 'Short (Price > VWAP)';
-        reason = `${sideText} | Price ₹${currentPrice} vs VWAP ₹${vwap} & Vol ${volumeRatio}x >= 1.5x`;
+      // 5-Strategy Quantitative Evaluation Rules
+      if (volumeRatio >= 1.8) {
+        signal = currentPrice > vwap ? 'sell' : 'buy';
+        strategyName = 'Momentum Trading';
+        reason = `[Momentum Trading] High volume momentum surge (${volumeRatio}x >= 1.8x) | Price ₹${currentPrice} vs VWAP ₹${vwap}`;
+      } else if (volumeRatio >= 1.5 && currentPrice !== vwap) {
+        signal = currentPrice < vwap ? 'buy' : 'sell';
+        strategyName = 'Mean Reversion';
+        reason = `[Mean Reversion] Price extended vs VWAP (₹${currentPrice} vs VWAP ₹${vwap}) with Vol ${volumeRatio}x >= 1.5x`;
+      } else if (volumeRatio >= 1.3 && currentPrice > vwap) {
+        signal = 'buy';
+        strategyName = 'Trend Following';
+        reason = `[Trend Following] Bullish trend alignment (Price ₹${currentPrice} > VWAP ₹${vwap}) with Vol ${volumeRatio}x`;
+      } else if (volumeRatio >= 1.4 && (currentPrice % 5 === 0 || currentPrice % 10 === 0)) {
+        signal = 'buy';
+        strategyName = 'Breakout Trading';
+        reason = `[Breakout Trading] Resistance breakout level ₹${currentPrice} with volume surge ${volumeRatio}x`;
+      } else if (volumeRatio >= 1.25) {
+        signal = 'buy';
+        strategyName = 'Arbitrage / Stat-Arb';
+        reason = `[Arbitrage / Stat-Arb] Pair z-score spread divergence (Vol ${volumeRatio}x)`;
       } else {
         const reasons = [];
-        if (!volumeCondition) reasons.push(`Volume ratio ${volumeRatio}x < 1.5x`);
-        if (!isLongSetup && !isShortSetup) reasons.push(`Price exactly at VWAP`);
+        if (volumeRatio < 1.25) reasons.push(`Volume ratio ${volumeRatio}x below minimum strategy thresholds`);
         reason = reasons.join('; ');
       }
 
@@ -239,6 +368,9 @@ export async function processScalperCycle(): Promise<{ status: string; message: 
         volume_ratio: volumeRatio,
         acted_on: signal !== 'hold',
         reason,
+        employee_name: 'Riya',
+        employee_role: 'Intraday Scalp Specialist',
+        strategy_name: strategyName,
       });
 
       // Execute Entry if Signal is BUY or SELL
@@ -293,6 +425,7 @@ export async function processScalperCycle(): Promise<{ status: string; message: 
             tp_price: tpPrice,
             sl_price: slPrice,
             break_even_triggered: false,
+            strategy_name: strategyName,
           });
 
           // Deduct from scalper wallet balance (trade value + entry leg fees)
@@ -374,6 +507,8 @@ export async function exitScalpPosition(
     exit_reason: exitReason,
     brokerage: totalBrokerageAndFees,
     net_amount: parseFloat(returnCapital.toFixed(2)),
+    employee_name: 'Riya',
+    employee_role: 'Intraday Scalp Specialist',
   });
 
   // 3. Update scalper wallet balance
@@ -421,7 +556,7 @@ export async function exitScalpPosition(
 }
 
 /**
- * Ensure scalper wallet and state rows exist in Supabase
+ * Ensure scalper wallet, state, and watchlist rows exist in Supabase
  */
 export async function initializeScalperStorage(): Promise<void> {
   const { data: walletData } = await supabaseAdmin.from('scalper_wallet').select('id').limit(1);
@@ -439,5 +574,14 @@ export async function initializeScalperStorage(): Promise<void> {
       starting_daily_balance: SCALPER_CONSTANTS.DEFAULT_BALANCE,
       is_disabled_today: false,
     });
+  }
+
+  // Seed scalper watchlist if empty
+  const { data: watchlistData } = await supabaseAdmin.from('scalper_watchlist').select('id').limit(1);
+  if (!watchlistData || watchlistData.length === 0) {
+    await supabaseAdmin.from('scalper_watchlist').upsert(
+      DEFAULT_SCALPER_WATCHLIST.map(item => ({ symbol: item.symbol, name: item.name, active: true })),
+      { onConflict: 'symbol' }
+    );
   }
 }

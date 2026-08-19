@@ -213,6 +213,8 @@ export async function executeTrade(signalResult: SignalResult): Promise<void> {
       total_charges: fees.totalCharges,
       amount: fees.netAmount, // This is the net amount debited/credited to wallet
       reason: signalResult.reason,
+      employee_name: 'Vikram',
+      employee_role: 'Swing Trading Specialist',
     })
     .select()
     .single()
@@ -326,6 +328,8 @@ export async function processTradingCycle(): Promise<void> {
           rsi14: signalResult.rsi14,
           acted_on: false,
           reason: signalResult.reason,
+          employee_name: 'Vikram',
+          employee_role: 'Swing Trading Specialist',
         })
 
       if (signalLogError) {

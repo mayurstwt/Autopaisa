@@ -10,6 +10,8 @@ export interface ScalpEntryParams {
   slPrice: number;
   entryFees: number;
   walletBalance: number;
+  employeeName?: string;
+  employeeRole?: string;
 }
 
 export interface ScalpExitParams {
@@ -23,6 +25,8 @@ export interface ScalpExitParams {
   pnlPercent: number;
   roundTripFees: number;
   walletBalance: number;
+  employeeName?: string;
+  employeeRole?: string;
 }
 
 export interface SwingTradeParams {
@@ -34,6 +38,26 @@ export interface SwingTradeParams {
   netAmount: number;
   walletBalance: number;
   reason?: string;
+  employeeName?: string;
+  employeeRole?: string;
+}
+
+export interface CROAlertParams {
+  alertType: 'circuit_breaker' | 'drawdown_warning' | 'risk_limit';
+  message: string;
+  currentDrawdown: number;
+  dailyLossLimit: number;
+  employeeName?: string;
+}
+
+export interface EODReportParams {
+  totalTrades: number;
+  swingPnL: number;
+  scalpPnL: number;
+  netTotalPnL: number;
+  totalBrokerage: number;
+  activeScalpPositions: number;
+  activeHoldings: number;
 }
 
 /**
@@ -84,10 +108,10 @@ export async function sendTelegramMessage(text: string): Promise<boolean> {
 }
 
 /**
- * Send notification when an intraday scalp trade position is opened
+ * Send notification when an intraday scalp trade position is opened (by Scalper Riya)
  */
 export async function sendScalpEntryNotification(params: ScalpEntryParams): Promise<void> {
-  const { symbol, side, quantity, entryPrice, investAmount, tpPrice, slPrice, entryFees, walletBalance } = params;
+  const { symbol, side, quantity, entryPrice, investAmount, tpPrice, slPrice, entryFees, walletBalance, employeeName = 'Riya', employeeRole = 'Intraday Scalp Specialist' } = params;
 
   const emoji = side === 'buy' ? '🟢' : '🔴';
   const action = side === 'buy' ? 'BUY (Long)' : 'SELL (Short)';
@@ -96,6 +120,7 @@ export async function sendScalpEntryNotification(params: ScalpEntryParams): Prom
 
   const text = [
     `⚡ <b>[SCALPER ENTRY] ${emoji} ${action} ${escapeHtml(symbol)}</b>`,
+    `👨‍💼 <i>Executed by <b>${employeeName}</b> (${employeeRole})</i>`,
     ``,
     `• <b>Quantity:</b> ${quantity.toLocaleString('en-IN')} shares @ ₹${entryPrice.toFixed(2)}`,
     `• <b>Invested:</b> ₹${investAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
@@ -118,10 +143,10 @@ export async function sendScalpEntryNotification(params: ScalpEntryParams): Prom
 }
 
 /**
- * Send notification when an intraday scalp trade position is closed
+ * Send notification when an intraday scalp trade position is closed (by Scalper Riya)
  */
 export async function sendScalpExitNotification(params: ScalpExitParams): Promise<void> {
-  const { symbol, side, entryPrice, exitPrice, quantity, exitReason, netPnl, pnlPercent, roundTripFees, walletBalance } = params;
+  const { symbol, side, entryPrice, exitPrice, quantity, exitReason, netPnl, pnlPercent, roundTripFees, walletBalance, employeeName = 'Riya', employeeRole = 'Intraday Scalp Specialist' } = params;
 
   const pnlEmoji = netPnl > 0 ? '🟢' : netPnl < 0 ? '🔴' : '⚪';
   let reasonFormatted = '';
@@ -143,6 +168,7 @@ export async function sendScalpExitNotification(params: ScalpExitParams): Promis
   const pnlSign = netPnl >= 0 ? '+' : '';
   const text = [
     `⚡ <b>[SCALPER EXIT] ${escapeHtml(symbol)} (${side.toUpperCase()})</b>`,
+    `👨‍💼 <i>Managed by <b>${employeeName}</b> (${employeeRole})</i>`,
     ``,
     `• <b>Exit Reason:</b> ${reasonFormatted}`,
     `• <b>Price:</b> ₹${entryPrice.toFixed(2)} ➔ <b>₹${exitPrice.toFixed(2)}</b>`,
@@ -165,22 +191,73 @@ export async function sendScalpExitNotification(params: ScalpExitParams): Promis
 }
 
 /**
- * Send notification for standard swing trade executions
+ * Send notification for standard swing trade executions (by Analyst Vikram)
  */
 export async function sendSwingTradeNotification(params: SwingTradeParams): Promise<void> {
-  const { symbol, side, quantity, price, totalCharges, netAmount, walletBalance, reason } = params;
+  const { symbol, side, quantity, price, totalCharges, netAmount, walletBalance, reason, employeeName = 'Vikram', employeeRole = 'Swing Trading Specialist' } = params;
 
   const emoji = side === 'buy' ? '🟢' : '🔴';
   const action = side === 'buy' ? 'BUY' : 'SELL';
   const text = [
     `📊 <b>[SWING TRADE] ${emoji} ${action} ${escapeHtml(symbol)}</b>`,
+    `👨‍💼 <i>Analyzed & Executed by <b>${employeeName}</b> (${employeeRole})</i>`,
     ``,
     `• <b>Quantity:</b> ${quantity.toLocaleString('en-IN')} shares @ ₹${price.toFixed(2)}`,
     `• <b>Total Charges:</b> ₹${totalCharges.toFixed(2)}`,
     `• <b>${side === 'buy' ? 'Debited' : 'Credited'}:</b> ₹${Math.abs(netAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
     `• <b>Wallet Balance:</b> ₹${walletBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-    reason ? `• <b>Reason:</b> ${escapeHtml(reason)}` : '',
+    reason ? `• <b>Reasoning:</b> ${escapeHtml(reason)}` : '',
   ].filter(Boolean).join('\n');
+
+  await sendTelegramMessage(text);
+}
+
+/**
+ * Send Chief Risk Officer (CRO Dev) Safety & Circuit Breaker Alerts
+ */
+export async function sendCROAlertNotification(params: CROAlertParams): Promise<void> {
+  const { alertType, message, currentDrawdown, dailyLossLimit, employeeName = 'Dev' } = params;
+
+  const header = alertType === 'circuit_breaker' 
+    ? '🛑 <b>[CRO CIRCUIT BREAKER ACTIVATED]</b>'
+    : '🛡️ <b>[CRO RISK WARNING]</b>';
+
+  const text = [
+    header,
+    `👨‍💼 <i>Issued by <b>${employeeName}</b> (Chief Risk Officer)</i>`,
+    ``,
+    `• <b>Message:</b> ${escapeHtml(message)}`,
+    `• <b>Current Daily P&L:</b> ₹${currentDrawdown.toFixed(2)}`,
+    `• <b>Daily Drawdown Limit:</b> ₹${dailyLossLimit.toFixed(2)}`,
+    `• <b>Status:</b> ${alertType === 'circuit_breaker' ? 'BOT TRADING SUSPENDED FOR TODAY' : 'MONITORING POSITIONS'}`,
+  ].join('\n');
+
+  await sendTelegramMessage(text);
+}
+
+/**
+ * Send End of Day (EOD) Compliance & Performance Report (by Reporter Kabir)
+ */
+export async function sendEODReportNotification(params: EODReportParams): Promise<void> {
+  const { totalTrades, swingPnL, scalpPnL, netTotalPnL, totalBrokerage, activeScalpPositions, activeHoldings } = params;
+
+  const pnlEmoji = netTotalPnL >= 0 ? '📈' : '📉';
+  const pnlSign = netTotalPnL >= 0 ? '+' : '';
+
+  const text = [
+    `📢 <b>[AUTOPAISA CAPITAL - END OF DAY REPORT] ${pnlEmoji}</b>`,
+    `👨‍💼 <i>Compiled by <b>Kabir</b> (Telegram Compliance Officer)</i>`,
+    ``,
+    `• <b>Total Trades Today:</b> ${totalTrades}`,
+    `• <b>Swing Delivery P&L:</b> ₹${swingPnL.toFixed(2)}`,
+    `• <b>Intraday Scalper P&L:</b> ₹${scalpPnL.toFixed(2)}`,
+    `• <b>Total Net P&L:</b> <b>${pnlSign}₹${netTotalPnL.toFixed(2)}</b>`,
+    `• <b>Total Brokerage & Taxes:</b> ₹${totalBrokerage.toFixed(2)}`,
+    `• <b>Active Scalp Positions:</b> ${activeScalpPositions}`,
+    `• <b>Active Swing Holdings:</b> ${activeHoldings}`,
+    ``,
+    `<i>Firm Status: All active systems operational for next session.</i>`,
+  ].join('\n');
 
   await sendTelegramMessage(text);
 }
