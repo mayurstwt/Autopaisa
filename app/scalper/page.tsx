@@ -22,23 +22,30 @@ export default function ScalperDashboardPage() {
   const [wallet, setWallet] = useState<any>(null);
   const [state, setState] = useState<any>(null);
   const [positions, setPositions] = useState<any[]>([]);
+  const [trades, setTrades] = useState<any[]>([]);
+  const [signals, setSignals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningTick, setRunningTick] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resettingState, setResettingState] = useState(false);
+  const [squaringOff, setSquaringOff] = useState(false);
   const [tickResult, setTickResult] = useState<any>(null);
 
   const fetchData = async () => {
     try {
-      const [wRes, sRes, pRes] = await Promise.all([
+      const [wRes, sRes, pRes, tRes, sigRes] = await Promise.all([
         fetch('/api/scalper/wallet'),
         fetch('/api/scalper/state'),
         fetch('/api/scalper/positions'),
+        fetch('/api/scalper/trades?limit=50'),
+        fetch('/api/scalper/signals?limit=20'),
       ]);
 
       if (wRes.ok) setWallet(await wRes.json());
       if (sRes.ok) setState(await sRes.json());
       if (pRes.ok) setPositions(await pRes.json());
+      if (tRes.ok) setTrades(await tRes.json());
+      if (sigRes.ok) setSignals(await sigRes.json());
     } catch (err) {
       console.error('Error fetching scalper dashboard data:', err);
     } finally {
@@ -64,6 +71,32 @@ export default function ScalperDashboardPage() {
       setTickResult({ status: 'error', message: err.message });
     } finally {
       setRunningTick(false);
+    }
+  };
+
+  const handleSquareOffAll = async () => {
+    setSquaringOff(true);
+    setTickResult(null);
+    try {
+      const res = await fetch('/api/scalper/positions', { method: 'POST' });
+      const data = await res.json();
+      setTickResult({ status: 'info', message: data.message || 'Squared off positions.' });
+      await fetchData();
+    } catch (err: any) {
+      setTickResult({ status: 'error', message: err.message });
+    } finally {
+      setSquaringOff(false);
+    }
+  };
+
+  const handleExitPosition = async (id: string) => {
+    try {
+      const res = await fetch(`/api/scalper/positions?id=${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      setTickResult({ status: 'info', message: data.message || 'Position exited.' });
+      await fetchData();
+    } catch (err: any) {
+      setTickResult({ status: 'error', message: err.message });
     }
   };
 
@@ -133,6 +166,17 @@ export default function ScalperDashboardPage() {
             <Play className={`h-4 w-4 fill-black ${runningTick ? 'animate-spin' : ''}`} />
             <span>{runningTick ? 'Scanning 1m...' : 'Run 1m Scalp Tick'}</span>
           </button>
+
+          {positions.length > 0 && (
+            <button
+              onClick={handleSquareOffAll}
+              disabled={squaringOff}
+              className="inline-flex items-center space-x-2 rounded-xl border border-zinc-700 bg-zinc-900 px-3.5 py-2.5 text-xs font-bold text-white hover:bg-zinc-800 transition-all disabled:opacity-50"
+            >
+              <RotateCcw className={`h-3.5 w-3.5 ${squaringOff ? 'animate-spin' : ''}`} />
+              <span>Square Off All ({positions.length})</span>
+            </button>
+          )}
 
           {state?.is_disabled_today && (
             <button
@@ -331,7 +375,7 @@ export default function ScalperDashboardPage() {
               Aggressive short-horizon momentum scanning. Capitalizes on rapid price acceleration coupled with volume confirmation (&ge; 1.5x 20m average).
             </p>
             <div className="flex items-center justify-between text-[11px] pt-1 text-zinc-500 border-t border-zinc-900/60 font-sans">
-              <span>Rule: <b className="text-zinc-300 font-mono">Vol &ge; 1.5x & Velocity</b></span>
+              <span>Rule: <b className="text-zinc-300 font-mono">Vol &ge; 1.5x &amp; Velocity</b></span>
               <span className="text-white font-mono">Auto-Execution</span>
             </div>
           </div>
@@ -411,6 +455,9 @@ export default function ScalperDashboardPage() {
                       {pos.side}
                     </span>
                     <span className="text-lg font-extrabold text-white">{pos.symbol}</span>
+                    <span className="ml-2 text-[10px] text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">
+                      {pos.strategy_name || 'Mean Reversion'}
+                    </span>
                   </div>
                   <div className="text-right">
                     <span className="text-xs text-zinc-400 block font-sans">Quantity</span>
@@ -437,10 +484,110 @@ export default function ScalperDashboardPage() {
                   <span className="px-2.5 py-1 text-[11px] font-bold rounded bg-zinc-900 text-zinc-300 border border-zinc-800 font-mono">
                     {pos.break_even_triggered ? 'Break-Even Trailing Active' : 'Standard SL'}
                   </span>
-                  <span className="text-[11px] text-zinc-500">Opened: {new Date(pos.created_at).toLocaleTimeString()}</span>
+                  
+                  <div className="flex items-center space-x-3">
+                    <span className="text-[11px] text-zinc-500">{new Date(pos.created_at).toLocaleTimeString()}</span>
+                    <button
+                      onClick={() => handleExitPosition(pos.id)}
+                      className="px-3 py-1 rounded bg-white text-black font-mono font-bold text-xs hover:bg-zinc-200 transition-all shadow-sm"
+                    >
+                      Exit Trade
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* RECENT EXECUTED SCALP TRADES TABLE PREVIEW */}
+      <div className="space-y-4 font-sans">
+        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+          <div className="flex items-center space-x-2">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2 font-mono">
+              <History className="h-5 w-5 text-white" /> Recent Executed Scalp Trades
+            </h2>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-900 text-zinc-400 border border-zinc-800 font-mono">
+              Latest 5 Trades
+            </span>
+          </div>
+          <Link
+            href="/scalper/trades"
+            className="text-xs font-mono font-bold text-white hover:underline flex items-center gap-1"
+          >
+            View Full Trades History ({trades.length}) &rarr;
+          </Link>
+        </div>
+
+        {trades.length === 0 ? (
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-8 text-center space-y-2 font-mono">
+            <History className="mx-auto h-7 w-7 text-zinc-600" />
+            <h3 className="text-xs font-bold text-white">No Executed Scalp Trades Yet</h3>
+            <p className="text-xs text-zinc-500">
+              When 1-minute trades hit TP, SL, or are squared off, executed trade logs will display here.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-950 font-mono">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-black text-[11px] font-bold uppercase tracking-wider text-zinc-400 border-b border-zinc-800">
+                  <tr>
+                    <th className="py-3 px-4">Date &amp; Time</th>
+                    <th className="py-3 px-4">Symbol</th>
+                    <th className="py-3 px-4">Strategy</th>
+                    <th className="py-3 px-4 text-center">Side</th>
+                    <th className="py-3 px-4 text-right">Entry</th>
+                    <th className="py-3 px-4 text-right">Exit</th>
+                    <th className="py-3 px-4 text-right">Qty</th>
+                    <th className="py-3 px-4 text-center">Reason</th>
+                    <th className="py-3 px-4 text-right">Net P&amp;L</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-900 text-zinc-200">
+                  {trades.slice(0, 5).map((t: any) => {
+                    const isProfitable = t.pnl > 0;
+                    const formattedDateTime = new Date(t.created_at).toLocaleString('en-IN', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                      hour12: true,
+                    });
+                    return (
+                      <tr key={t.id} className="hover:bg-zinc-900/60 transition-colors">
+                        <td className="py-3 px-4 text-[11px] text-zinc-400 whitespace-nowrap font-mono">
+                          {formattedDateTime}
+                        </td>
+                        <td className="py-3 px-4 font-bold text-white">{t.symbol}</td>
+                        <td className="py-3 px-4 text-zinc-400">{t.strategy_name || 'Mean Reversion'}</td>
+                        <td className="py-3 px-4 text-center">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-white text-black">
+                            {t.side}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono text-zinc-300">₹{Number(t.entry_price).toFixed(2)}</td>
+                        <td className="py-3 px-4 text-right font-mono text-zinc-300">₹{Number(t.exit_price).toFixed(2)}</td>
+                        <td className="py-3 px-4 text-right font-mono text-zinc-300">{t.quantity}</td>
+                        <td className="py-3 px-4 text-center">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-900 text-zinc-300 border border-zinc-800">
+                            {t.exit_reason === 'tp' ? 'TP (+0.60%)' : t.exit_reason === 'sl' ? 'SL (-0.30%)' : 'EOD Squareoff'}
+                          </span>
+                        </td>
+                        <td className={`py-3 px-4 text-right font-mono font-bold ${
+                          isProfitable ? 'text-white font-extrabold' : 'text-zinc-400'
+                        }`}>
+                          {isProfitable ? '+' : ''}₹{Number(t.pnl).toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

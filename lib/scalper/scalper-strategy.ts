@@ -223,13 +223,15 @@ export async function processScalperCycle(): Promise<{ status: string; message: 
   // Check Rule 3: Time-of-day Gate (9:30 AM to 3:15 PM IST)
   const isWithinTradingHours = totalMinutes >= SCALPER_CONSTANTS.START_HOUR_MINUTES && totalMinutes <= SCALPER_CONSTANTS.END_HOUR_MINUTES;
 
-  // Auto Square-off at 3:15 PM IST
-  if (totalMinutes > SCALPER_CONSTANTS.END_HOUR_MINUTES) {
+  // Auto Square-off at 3:15 PM IST (or outside market hours)
+  if (totalMinutes > SCALPER_CONSTANTS.END_HOUR_MINUTES || totalMinutes < SCALPER_CONSTANTS.START_HOUR_MINUTES) {
     if (activePositions.length > 0) {
-      console.log(`Market close reached (3:15 PM IST). Squaring off ${activePositions.length} open scalp positions...`);
-      for (const pos of activePositions) {
-        await exitScalpPosition(pos, pos.entry_price, 'eod_squareoff', scalperWallet, scalperState);
-      }
+      console.log(`Market close / off-hours reached (${timeString} IST). Squaring off ${activePositions.length} open scalp positions...`);
+      const squareOffResult = await squareOffAllScalpPositions('eod_squareoff');
+      return {
+        status: 'market_closed',
+        message: `Outside trading hours (${timeString} IST). ${squareOffResult.message}`,
+      };
     }
     return {
       status: 'market_closed',
@@ -276,14 +278,14 @@ export async function processScalperCycle(): Promise<{ status: string; message: 
 
       if (hitTP) {
         console.log(`[TP Hit] ${pos.symbol} (${pos.side.toUpperCase()}) @ ₹${currentPrice} (TP ₹${pos.tp_price})`);
-        await exitScalpPosition(pos, currentPrice, 'tp', scalperWallet, scalperState);
+        await exitScalpPosition(pos, currentPrice, 'tp');
         continue;
       }
 
       if (hitSL) {
         const reason = pos.break_even_triggered ? 'break_even' : 'sl';
         console.log(`[SL Hit] ${pos.symbol} (${pos.side.toUpperCase()}) @ ₹${currentPrice} (SL ₹${pos.sl_price}) (${reason})`);
-        await exitScalpPosition(pos, currentPrice, reason, scalperWallet, scalperState);
+        await exitScalpPosition(pos, currentPrice, reason);
         continue;
       }
     } catch (err) {
@@ -469,10 +471,22 @@ export async function processScalperCycle(): Promise<{ status: string; message: 
 export async function exitScalpPosition(
   pos: any,
   exitPrice: number,
-  exitReason: 'tp' | 'sl' | 'break_even' | 'eod_squareoff',
-  wallet: any,
-  state: any
+  exitReason: 'tp' | 'sl' | 'break_even' | 'eod_squareoff'
 ): Promise<void> {
+  // Re-fetch fresh wallet & state from Supabase to prevent stale state race conditions
+  const [walletRes, stateRes] = await Promise.all([
+    supabaseAdmin.from('scalper_wallet').select('*').limit(1).single(),
+    supabaseAdmin.from('scalper_state').select('*').limit(1).single(),
+  ]);
+
+  const wallet = walletRes.data;
+  const state = stateRes.data;
+
+  if (!wallet || !state) {
+    console.error('[Exit Position] Failed to fetch fresh wallet/state row');
+    return;
+  }
+
   const grossTradeValue = pos.quantity * exitPrice;
   const rawPnl = pos.side === 'buy'
     ? (exitPrice - pos.entry_price) * pos.quantity
@@ -509,9 +523,10 @@ export async function exitScalpPosition(
     net_amount: parseFloat(returnCapital.toFixed(2)),
     employee_name: 'Riya',
     employee_role: 'Intraday Scalp Specialist',
+    strategy_name: pos.strategy_name || 'Mean Reversion',
   });
 
-  // 3. Update scalper wallet balance
+  // 3. Update scalper wallet balance with fresh balance
   const updatedWalletBalance = wallet.balance + returnCapital;
   await supabaseAdmin
     .from('scalper_wallet')
@@ -553,6 +568,40 @@ export async function exitScalpPosition(
   });
 
   console.log(`[SCALPER EXIT] ${pos.symbol} (${pos.side.toUpperCase()}) @ ₹${exitPrice} (${exitReason.toUpperCase()}). Net P&L: ₹${netPnl.toFixed(2)} (${(pnlPercent * 100).toFixed(2)}%). Round-trip fees: ₹${totalBrokerageAndFees}. Cooldown ${cooldownSecs}s.`);
+}
+
+/**
+ * Square off all open scalp positions, calculate P&L at market or entry price, and return capital to wallet
+ */
+export async function squareOffAllScalpPositions(reason: 'tp' | 'sl' | 'break_even' | 'eod_squareoff' = 'eod_squareoff'): Promise<{ count: number; message: string }> {
+  const { data: positions } = await supabaseAdmin.from('scalper_positions').select('*');
+  if (!positions || positions.length === 0) {
+    return { count: 0, message: 'No open scalp positions to square off.' };
+  }
+
+  let exitedCount = 0;
+  for (const pos of positions) {
+    try {
+      let exitPrice = pos.entry_price;
+      try {
+        const scalpData = await fetchIntradayScalpData(pos.symbol);
+        if (scalpData && scalpData.currentPrice > 0) {
+          exitPrice = scalpData.currentPrice;
+        }
+      } catch (e) {
+        // Fallback to entry_price if Yahoo Finance query fails during off-hours
+      }
+      await exitScalpPosition(pos, exitPrice, reason);
+      exitedCount++;
+    } catch (err) {
+      console.error(`Error squaring off position ${pos.id} for ${pos.symbol}:`, err);
+    }
+  }
+
+  return {
+    count: exitedCount,
+    message: `Successfully squared off ${exitedCount} open scalp position(s) and returned capital to wallet.`,
+  };
 }
 
 /**
